@@ -2,10 +2,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io/fs"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +17,7 @@ import (
 func main() {
 	var (
 		workerCount  = flag.Int("worker-count", 1, "number of concurrent workers")
-		reducerCount = flag.Int("reducer-count", 1, "number or reducers")
+		reducerCount = flag.Int("reducer-count", 2, "number or reducers")
 		inputDir     = flag.String("input-dir", "test_data", "input directory of files to process")
 	)
 	flag.Parse()
@@ -72,7 +72,7 @@ func main() {
 		}(path)
 	}
 
-	var results [][]string
+	var results []string
 	for i := 0; i < len(inputFilePaths); i++ {
 		result := <-mapResultCh
 
@@ -81,10 +81,45 @@ func main() {
 			return
 		}
 
-		results = append(results, result.ResultPaths)
+		results = append(results, result.ResultPaths...)
+	}
+	close(mapResultCh)
+	mapResultCh = nil
+
+	// group results by partition
+	partitions := make([][]string, *reducerCount)
+	for _, r := range results {
+		splits := strings.Split(r, "/")
+		partition, _ := strconv.Atoi(splits[len(splits)-1])
+
+		partitions[partition] = append(partitions[partition], r)
 	}
 
-	fmt.Printf("result: %v", results)
+	reduceResultCh := make(chan types.TaskResult, *reducerCount)
+	for _, partition := range partitions {
+		go func(partition []string) {
+			task := types.ReduceTask{
+				TaskId:    uuid.NewString(),
+				FilePaths: partition,
+				F:         types.ReduceFunc(testReduceFunc),
+				Result:    reduceResultCh,
+			}
+
+			log.Printf("[MASTER] submitting reduce task %s", task.TaskId)
+
+			reduceTasks <- task
+		}(partition)
+	}
+
+	for i := 0; i < *reducerCount; i++ {
+		result := <-reduceResultCh
+		if result.Err != nil {
+			log.Printf("[MASTER] error in reduce task: %v", result.Err)
+			return
+		}
+	}
+	close(reduceResultCh)
+	reduceResultCh = nil
 
 	close(done)
 	time.Sleep(2 * time.Second)
@@ -98,5 +133,13 @@ func testMapFunc(kv types.KeyValue, emit types.EmitFunc) error {
 		})
 	}
 
+	return nil
+}
+
+func testReduceFunc(kvs types.KeyValues, emit types.EmitFunc) error {
+	emit(types.KeyValue{
+		Key:   kvs.Key,
+		Value: strconv.Itoa(len(kvs.Values)),
+	})
 	return nil
 }

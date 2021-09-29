@@ -39,12 +39,17 @@ func (w *Worker) handleMapTask(task types.MapTask) {
 	scanner := bufio.NewScanner(inputFile)
 	lineNumber := 1
 	for scanner.Scan() {
-		payload := types.KeyValue{
+		kv := types.KeyValue{
 			Key:   strconv.Itoa(lineNumber),
 			Value: scanner.Text(),
 		}
 
-		task.F(payload, emit)
+		if err := task.F(kv, emit); err != nil {
+			task.Result <- types.TaskResult{
+				Err: fmt.Errorf("[ERROR] map func failed on entry %v: %w", kv, err),
+			}
+			return
+		}
 
 		lineNumber++
 	}
@@ -97,7 +102,7 @@ func (w *Worker) handleMapTask(task types.MapTask) {
 		ResultPaths: result,
 	}
 
-	log.Printf("Task %s is finished successfully", task.TaskId)
+	log.Printf("Map task %s is finished successfully", task.TaskId)
 }
 
 func (w *Worker) partitionMapOutput(output []types.KeyValue) [][]types.KeyValue {

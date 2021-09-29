@@ -28,9 +28,9 @@ type MapTask struct {
 }
 
 type ReduceTask struct {
-	TaskId   string
-	FilePath string
-	F        ReduceFunc
+	TaskId    string
+	FilePaths []string
+	F         ReduceFunc
 
 	Result chan<- TaskResult
 }

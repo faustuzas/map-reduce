@@ -20,7 +20,7 @@ func (w *Worker) Run() {
 		case mapTask := <-w.MapTasks:
 			w.handleMapTask(mapTask)
 		case reduceTask := <-w.ReduceTasks:
-			log.Printf("reduce task received: %v", reduceTask)
+			w.handleReduceTask(reduceTask)
 		case <-w.Done:
 			log.Println("worker shutting down...")
 			return
