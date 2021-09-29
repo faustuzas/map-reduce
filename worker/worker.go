@@ -6,28 +6,22 @@ import (
 	"github.com/faustuzas/map-reduce/types"
 )
 
-type worker struct {
-	mapTasks    <-chan types.MapTask
-	reduceTasks <-chan types.ReduceTask
-	done        <-chan struct{}
+type Worker struct {
+	MapTasks    <-chan types.MapTask
+	ReduceTasks <-chan types.ReduceTask
+	Done        <-chan struct{}
+
+	ReducerCount int
 }
 
-func NewWorker(mapTasks <-chan types.MapTask, reduceTasks <-chan types.ReduceTask, done <-chan struct{}) *worker {
-	return &worker{
-		mapTasks:    mapTasks,
-		reduceTasks: reduceTasks,
-		done:        done,
-	}
-}
-
-func (w *worker) Run() {
+func (w *Worker) Run() {
 	for {
 		select {
-		case mapTask := <-w.mapTasks:
-			log.Printf("map task received: %v", mapTask)
-		case reduceTask := <-w.reduceTasks:
+		case mapTask := <-w.MapTasks:
+			w.handleMapTask(mapTask)
+		case reduceTask := <-w.ReduceTasks:
 			log.Printf("reduce task received: %v", reduceTask)
-		case <-w.done:
+		case <-w.Done:
 			log.Println("worker shutting down...")
 			return
 		}
